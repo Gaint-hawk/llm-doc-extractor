@@ -1,0 +1,51 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: LLM Document Extractor - FastAPI on AWS Lambda with S3 uploads
+
+Parameters:
+  AnthropicApiKeySecretArn:
+    Type: String
+    Description: Secrets Manager ARN holding ANTHROPIC_API_KEY
+  DatabaseUrl:
+    Type: String
+    NoEcho: true
+    Description: SQLAlchemy URL, e.g. postgresql+psycopg://user:pass@rds-host:5432/extractor
+
+Resources:
+  UploadsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  ExtractorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: lambda_handler.handler
+      Runtime: python3.12
+      CodeUri: .
+      MemorySize: 512
+      Timeout: 120
+      Environment:
+        Variables:
+          STORAGE_BACKEND: s3
+          S3_BUCKET: !Ref UploadsBucket
+          DATABASE_URL: !Ref DatabaseUrl
+          ANTHROPIC_API_KEY: !Sub "{{resolve:secretsmanager:${AnthropicApiKeySecretArn}:SecretString:ANTHROPIC_API_KEY}}"
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref UploadsBucket
+      Events:
+        Api:
+          Type: HttpApi
+
+Outputs:
+  ApiUrl:
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com"
